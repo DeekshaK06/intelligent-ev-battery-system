@@ -19,7 +19,7 @@ class DataExporter:
                     writer = csv.writer(f)
                     writer.writerow([
                         "timestamp", "battery_id", "voltage", "current", 
-                        "temperature", "soc", "soh", "cycle_count", "status", "fault_type"
+                        "temperature", "soc", "soh", "cycle_count", "battery_state", "status", "fault_type"
                     ])
             except IOError as e:
                 logger.error(f"Failed to generate telemetry CSV matrix layout: {e}")
@@ -38,8 +38,8 @@ class DataExporter:
                 writer = csv.writer(f)
                 writer.writerow([
                     state.timestamp, state.battery_id, state.voltage, state.current, 
-                    state.temperature, state.soc, state.soh, state.cycle_count, 
-                    state.status, state.fault_type if state.fault_type else ""
+                    state.temperature, state.soc, state.soh, state.cycle_count,
+                    state.battery_state, state.status, state.fault_type if state.fault_type else ""
                 ])
         except IOError as e:
             logger.error(f"Failed logging array payload mapping directly to CSV: {e}")
