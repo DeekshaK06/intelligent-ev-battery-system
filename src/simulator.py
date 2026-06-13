@@ -2,6 +2,7 @@ import time
 import random
 import logging
 from datetime import datetime
+from typing import Dict, List, Optional
 from config.settings import TICK_INTERVAL_SEC, CSV_PATH
 from src.battery import Battery, BatteryState
 from src.data_exporter import DataExporter
@@ -10,77 +11,75 @@ from src.fault_injector import FaultInjector
 logger = logging.getLogger(__name__)
 
 class SimulatorEngine:
-    """Manages iterative evaluation loops, system physics steps, and operational tasks."""
-    
     def __init__(self):
-        self.battery: Battery = Battery(battery_id="EV001", initial_soc=80.0)
+        self.battery_ids: List[str] = ["EV001", "EV002", "EV003", "EV004", "EV005"]
+        self.batteries: Dict[str, Battery] = {
+            b_id: Battery(battery_id=b_id, initial_soc=random.uniform(70.0, 85.0), initial_cycles=random.randint(110, 150))
+            for b_id in self.battery_ids
+        }
         self.exporter: DataExporter = DataExporter(CSV_PATH)
-        self.fault_injector: FaultInjector = FaultInjector(self.battery)
+        self.fault_injector: FaultInjector = FaultInjector(self.batteries)
         self.is_running: bool = False
 
-    def _generate_realistic_current(self) -> float:
-        """Evaluates driving current loads, alternating between charge and discharge modes."""
+    def _generate_realistic_current(self, battery_id: str) -> float:
         roll = random.random()
-        if roll < 0.50:
-            return random.uniform(-45.0, -15.0)  # Standard Discharge profile load
-        elif roll < 0.75:
-            return 0.0                           # Stationary equilibrium state
-        else:
-            return random.uniform(10.0, 35.0)    # Active regenerative charging load
+        if roll < 0.55: return random.uniform(-50.0, -15.0)
+        elif roll < 0.75: return 0.0
+        else: return random.uniform(12.0, 40.0)
 
     def run(self) -> None:
-        """Starts the main runtime engine thread loop."""
         self.is_running = True
-        logger.info(f"🔋 Digital Twin platform tracking initialized for {self.battery.battery_id}.")
-        print("\n🚀 Starting Upgraded Real-Time Stream...")
+        logger.info(f"Fleet Management Parallel Digital Twin initialized")
+        print("\n🚀 Fleet Engine Operational. Processing Parallel Twin Vectors...")
         
         tick = 0
         try:
             while self.is_running:
                 tick += 1
+                timestamp_str = datetime.utcnow().isoformat() + "Z"
                 
-                # Execution schedule for fault injection scenarios
-                if tick == 5:
-                    self.fault_injector.trigger_fault("OVERHEATING", duration_ticks=3)
-                elif tick == 12:
-                    self.fault_injector.trigger_fault("VOLTAGE_ANOMALY", duration_ticks=2)
-                elif tick == 18:
-                    self.fault_injector.trigger_fault("RAPID_DISCHARGE", duration_ticks=4)
+                if tick == 4:
+                    self.fault_injector.trigger_fault("EV002", "OVERHEATING", duration_ticks=3)
 
-                # Step execution physics matrices
-                curr_mod, temp_mod = self.fault_injector.process_fault_lifecycle()
+                for b_id in self.battery_ids:
+                    battery = self.batteries[b_id]
+                    curr_mod, temp_mod = self.fault_injector.process_fault_lifecycle(b_id)
+                    
+                    current_input = self._generate_realistic_current(b_id) + curr_mod
+                    battery.update_physics(current_input, external_temp_delta=temp_mod)
+
+                    state = BatteryState(
+                        timestamp=timestamp_str,
+                        battery_id=battery.battery_id,
+                        voltage=battery.voltage,
+                        current=battery.current,
+                        temperature=battery.temperature,
+                        soc=round(battery.soc, 1),
+                        soh=round(battery.soh, 2),
+                        cycle_count=int(battery.cycle_count),
+                        battery_state=battery.battery_state,
+                        status=battery.status,
+                        fault_type=battery.fault_type
+                    )
+
+                    json_payload = self.exporter.serialize_to_json(state)
+                    self.exporter.write_to_csv(state)
+                    
+                    if state.battery_state == "FAULT": state_emoji = "⚠️"
+                    elif state.battery_state == "CHARGING": state_emoji = "⚡"
+                    elif state.battery_state == "DISCHARGING": state_emoji = "🔋"
+                    else: state_emoji = "🅿️"
+
+                    print(f"📡 [STREAM -> {b_id}] {state_emoji}: {json_payload}")
                 
-                if self.fault_injector.active_fault != "RAPID_DISCHARGE":
-                    current_input = self._generate_realistic_current() + curr_mod
-                    self.battery.update_physics(current_input, external_temp_delta=temp_mod)
-
-                # Gather and export expanded structural states (ALL REQUIRED ARGUMENTS PASSED HERE)
-                state = BatteryState(
-                    timestamp=datetime.utcnow().isoformat() + "Z",
-                    battery_id=self.battery.battery_id,
-                    voltage=self.battery.voltage,
-                    current=self.battery.current,
-                    temperature=self.battery.temperature,
-                    soc=round(self.battery.soc, 1),
-                    soh=round(self.battery.soh, 1),
-                    cycle_count=int(self.battery.cycle_count),
-                    status=self.battery.status,
-                    fault_type=self.battery.fault_type
-                )
-
-                json_payload = self.exporter.serialize_to_json(state)
-                self.exporter.write_to_csv(state)
-                
-                print(f"📡 [DATA STREAM]: {json_payload}")
+                print(f"--- [TIMESTEP CYCLE {tick} COMPLETELY LOGGED] ---\n")
                 time.sleep(TICK_INTERVAL_SEC)
                 
         except KeyboardInterrupt:
-            logger.info("Simulation loop paused via user terminal exit signature.")
             self.stop()
         except Exception as e:
-            logger.critical(f"Unhandled critical execution error in simulation runtime: {e}", exc_info=True)
             self.stop()
 
     def stop(self) -> None:
         self.is_running = False
-        print("\n🛑 Simulator safely shut down. Log file and CSV data written successfully.")
+        print("\n🛑 Fleet platform safely shut down.")
